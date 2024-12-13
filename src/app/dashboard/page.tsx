@@ -7,6 +7,7 @@ export default function Dashboard() {
   interface Event {
     _id: string;
     title: string;
+    image: string;
     description: string;
     date: string;
     time: string;
@@ -23,14 +24,16 @@ export default function Dashboard() {
     location: "",
     availableSeats: "",
   });
-
+  const [fileData, setFileData] = useState<File | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const token = localStorage.getItem("token");
   useEffect(() => {
     fetchEvents();
   }, []);
 
   const fetchEvents = async () => {
     try {
-      const response = await axios.get("http://localhost:4000/api/events"); // Asegúrate que el endpoint esté bien configurado
+      const response = await axios.get("http://localhost:4000/api/events");
       setEvents(response.data);
     } catch (error) {
       console.error("Error al obtener eventos:", error);
@@ -40,96 +43,71 @@ export default function Dashboard() {
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    let { name, value } = e.target;
-    if (name === "fecha"){
-      const date = new Date(value);
-      const formattedDate = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
-      value = formattedDate;
-    }
+    const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
   };
 
-  const createEvent = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post(
-        "http://localhost:4000/api/events",
-        formData,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
-      );
-      setEvents([...events, response.data.event]);
-      setFormData({
-        title: "",
-        description: "",
-        date: "",
-        time: "",
-        location: "",
-        availableSeats: "",
-      });
-    } catch (error) {
-      console.error("Error al crear el evento:", error);
-    }
-  };
-
-  const deleteEvent = async (id: string) => {
-    try {
-      await axios.delete(`http://localhost:4000/api/events/${id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-      });
-      setEvents(events.filter((event) => event._id !== id));
-    } catch (error) {
-      console.error("Error al eliminar el evento:", error);
-    }
-  };
-
-  const editEvent = async (id: string) => {
-    try {
-      const updatedEvent = {
-        title: formData.title,
-        description: formData.description,
-        date: formData.date,
-        time: formData.time,
-        location: formData.location,
-        availableSeats: formData.availableSeats,
-      };
-
-      const response = await axios.put(
-        `http://localhost:4000/api/events/${id}`,
-        updatedEvent,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        }
-      );
-
-      // Actualiza la lista de eventos con los datos actualizados
-      setEvents(
-        events.map((event) => (event._id === id ? response.data.event : event))
-      );
-
-      // Limpia el formulario después de editar
-      setFormData({
-        title: "",
-        description: "",
-        date: "",
-        time: "",
-        location: "",
-        availableSeats: "",
-      });
-    } catch (error) {
-      console.error("Error al actualizar el evento:", error);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFileData(e.target.files[0]);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (editingId) {
-      await editEvent(editingId);
-      setEditingId(null); // Limpia el estado de edición
-    } else {
-      await createEvent(e);
+    const formDataToSend = new FormData();
+    Object.keys(formData).forEach((key) => {
+      formDataToSend.append(key, formData[key as keyof typeof formData]);
+    });
+
+    if (fileData) {
+      formDataToSend.append("image", fileData);
+    }
+
+    try {
+      if (editingId) {
+        const response = await axios.put(
+          `http://localhost:4000/api/events/${editingId}`,
+          formDataToSend,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+        setEvents(
+          events.map((event) =>
+            event._id === editingId ? response.data.event : event
+          )
+        );
+        setEditingId(null);
+      } else {
+        const response = await axios.post(
+          "http://localhost:4000/api/events",
+          formDataToSend,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+        setEvents([...events, response.data.event]);
+      }
+
+      setFormData({
+        title: "",
+        description: "",
+        date: "",
+        time: "",
+        location: "",
+        availableSeats: "",
+      });
+      setFileData(null);
+    } catch (error) {
+      console.error("Error al enviar el formulario:", error);
     }
   };
 
@@ -144,9 +122,19 @@ export default function Dashboard() {
     });
     setEditingId(event._id);
   };
-  
-  const [editingId, setEditingId] = useState<string | null>(null);
-  
+  console.log(localStorage.getItem("token"));
+  const deleteEvent = async (id: string) => {
+    try {
+      await axios.delete(`http://localhost:4000/api/events/${id}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setEvents(events.filter((event) => event._id !== id));
+    } catch (error) {
+      console.error("Error al eliminar el evento:", error);
+    }
+  };
 
   return (
     <section className="w-full">
@@ -160,6 +148,12 @@ export default function Dashboard() {
           onChange={handleInputChange}
           placeholder="Título"
           required
+        />
+        <input
+          name="image"
+          type="file"
+          onChange={handleFileChange}
+          required={!editingId}
         />
         <textarea
           className="p-3 rounded-xl bg-[#1C2A36] mb-4 border border-neutral-700"
@@ -198,53 +192,50 @@ export default function Dashboard() {
           placeholder="Asientos disponibles"
           required
         />
-        <button
-          type="submit"
-          className="bg-[#F4C751] py-2 text-[#151C25] font-semibold rounded-xl hover:"
-        >
-          Crear Evento
+        <button type="submit" className="bg-[#F4C751] py-2 text-[#151C25] font-semibold rounded-xl">
+          {editingId ? "Editar Evento" : "Crear Evento"}
         </button>
       </form>
-
-      <table className="w-full max-w-4xl mx-auto mt-5">
-        <thead>
-          <tr className="bg-slate-800">
-            <th className="rounded-tl-xl">Título</th>
-            <th>Descripción</th>
-            <th>Fecha</th>
-            <th>Hora</th>
-            <th>Ubicación</th>
-            <th>Asientos disponibles</th>
-          </tr>
-        </thead>
-        <tbody>
-          {events.map((event) => (
-            <tr key={event._id} className="border border-x-0 [&>td]:px-2">
-              <td>{event.title}</td>
-              <td>{event.description}</td>
-              <td>
-                Fecha: {event.date} | Hora: {event.time}
-              </td>
-              <td>Ubicación: {event.location}</td>
-              <td>Asientos disponibles: {event.availableSeats}</td>
-              <td className="text-black space-y-3">
-                <button
-                  onClick={() => deleteEvent(event._id)}
-                  className="rounded-xl w-full px-2 py-1 bg-red-500"
-                >
-                  Eliminar
-                </button>
-                <button
-                  onClick={() => handleEditClick(event)}
-                  className="w-full rounded-xl px-2 py-1 bg-yellow-400"
-                >
-                  Editar
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="grid grid-cols-1 gap-4 max-w-2xl mx-auto mt-4">
+        {events.map((event) => (
+          <div
+            key={event._id}
+            className="bg-[#1C2A36] p-4 rounded-xl border border-neutral-700"
+          >
+            <h2 className="text-xl font-semibold">{event.title}</h2>
+            <img
+              className="w-full h-40 object-cover rounded-xl"
+              src={`http://localhost:4000/${event.image}`}
+              alt={event.title}
+            />
+            <p>{event.description}</p>
+            <p>
+              <strong>Fecha:</strong> {event.date}
+            </p>
+            <p>
+              <strong>Hora:</strong> {event.time}
+            </p>
+            <p>
+              <strong>Ubicación:</strong> {event.location}
+            </p>
+            <p>
+              <strong>Asientos disponibles:</strong> {event.availableSeats}
+            </p>
+            <button
+              className="bg-[#F4C751] py-2 text-[#151C25] font-semibold rounded-xl"
+              onClick={() => handleEditClick(event)}
+            >
+              Editar
+            </button>
+            <button
+              className="bg-[#F4C751] py-2 text-[#151C25] font-semibold rounded-xl"
+              onClick={() => deleteEvent(event._id)}
+            >
+              Eliminar
+            </button>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
